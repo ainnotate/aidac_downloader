@@ -1,3 +1,6 @@
+
+![Alt text](aidac_logo.jpg)
+
 # AIDAC Downloader
 
 AIDAC is and AI Data collection platform and helps streamlining data collection workflows for AI. AIDAC Downloader is part of AIDAC solution and is used to download dataset from cloud storage. AIDAC Downloader utility is usually used at the end of the data collection process to download the approved datasets (after QC).
