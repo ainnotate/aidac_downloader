@@ -1,5 +1,5 @@
 
-![Alt text](aidac_logo.jpg)
+![Alt text](aidac_logo.png)
 
 # AIDAC Downloader
 
