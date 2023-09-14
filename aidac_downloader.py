@@ -202,6 +202,12 @@ def main():
     approve_prefix = 'approved/'
     reject_prefix = 'rejected/'
 
+    print('\n******************************************************************')
+    print(' AIDAC Downloader - Downloads dataset and generates consent forms')
+    print('******************************************************************\n')
+ 
+    download_error = False
+
     for obj in objects:
         obj_id = obj['id']
         obj_name = obj['name']
@@ -238,19 +244,25 @@ def main():
                 print('File already downloaded, avoiding re-download.')
             else:
                 if not download_file(upload_url, file_path):
-                    continue
+                    download_error = True
 
         if consent_form_enabled:
             if object_rejected:
-                folder_name = project_prefix + reject_prefix + '/' + obj_name + '/'
+                folder_name = project_prefix + reject_prefix + obj_name + '/'
             else:
-                folder_name = project_prefix + approve_prefix + '/' + obj_name + '/'
+                folder_name = project_prefix + approve_prefix + obj_name + '/'
 
             file_path = folder_name + obj_name + '_consent_form.json'
-            if not download_file(obj_consent_form_url, file_path):
-                continue
+            if download_file(obj_consent_form_url, file_path):
+                generate_consent_form(file_path, project_name)
+            else:
+                download_error = True
+            
 
-            generate_consent_form(file_path, project_name)
+    if download_error:
+        print('\nDownload Error - Probably the pre-signed urls expired. Please try downloading the Download Config File again or contact AIDAC support if issue persists.')
+    else:
+        print('\nDownload Successful - Dataset downloaded under \'aidac\' folder.')
 
 if __name__ == "__main__":
     main()
