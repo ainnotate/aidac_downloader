@@ -246,6 +246,13 @@ def main():
                 if not download_file(upload_url, file_path):
                     download_error = True
 
+            if 'scriptData' in upload:
+                script_file = file_path.split('.')[0]+'_script.txt'
+                script_data = upload['scriptData'][1:-1].split('content:')[1]
+                print('saving script file to - ', script_file)
+                with open(script_file, 'w') as f:
+                    f.write(script_data)
+
         if consent_form_enabled:
             if object_rejected:
                 folder_name = project_prefix + reject_prefix + obj_name + '/'
