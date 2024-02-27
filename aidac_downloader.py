@@ -19,6 +19,16 @@ def is_object_rejected(uploads):
 
     return True if len(rejected_list) else False
 
+def is_object_pending (uploads):
+
+    pending_list = [
+        upload for upload in uploads
+        if upload['approvalStatus'] == 2
+    ]
+
+    return True if len(pending_list) else False
+
+
 def create_folder(folder_name):
 
     isExist = os.path.exists(folder_name)
@@ -199,8 +209,9 @@ def main():
     objects = download_data['objects']
 
     project_prefix = 'aidac/'+project_name+'/'
-    approve_prefix = 'approved/'
-    reject_prefix = 'rejected/'
+    approve_prefix = 'qc_approved/'
+    reject_prefix = 'qc_rejected/'
+    pending_prefix = 'qc_pending/'
 
     print('\n******************************************************************')
     print(' AIDAC Downloader - Downloads dataset and generates consent forms')
@@ -216,8 +227,10 @@ def main():
             obj_consent_form_url = obj['consentFormUrl']
 
         object_rejected = False        
+        object_pending = False        
         if is_grouping:
             object_rejected = is_object_rejected(obj_uploads)
+            object_pending = is_object_pending(obj_uploads)
 
         if ignore_rejected and object_rejected:
             continue
@@ -229,10 +242,12 @@ def main():
             upload_md5 = upload['md5']
             upload_approval_status = upload['approvalStatus']
 
-            if int(upload_approval_status) and not object_rejected:
-                folder_name = project_prefix + approve_prefix
-            else:
+            if object_rejected:
                 folder_name = project_prefix + reject_prefix
+            elif object_pending:
+                folder_name = project_prefix + pending_prefix
+            else:
+                folder_name = project_prefix + approve_prefix
 
             folder_name += obj_name + '/'
 
@@ -247,23 +262,27 @@ def main():
                     download_error = True
 
             if 'scriptData' in upload:
-                script_file = file_path.split('.')[0]+'_script.txt'
-                script_data = upload['scriptData'][1:-1].split('content:')[1]
-                print('saving script file to - ', script_file)
-                with open(script_file, 'w') as f:
-                    f.write(script_data)
+                if upload['scriptData'] != "":
+                    script_file = file_path.split('.')[0]+'_script.txt'
+                    script_data = upload['scriptData'][1:-1].split('content:')[1]
+                    print('saving script file to - ', script_file)
+                    with open(script_file, 'w') as f:
+                        f.write(script_data)
 
         if consent_form_enabled:
             if object_rejected:
                 folder_name = project_prefix + reject_prefix + obj_name + '/'
+            elif object_pending:
+                folder_name = project_prefix + pending_prefix + obj_name + '/'
             else:
                 folder_name = project_prefix + approve_prefix + obj_name + '/'
 
             file_path = folder_name + obj_name + '_consent_form.json'
-            if download_file(obj_consent_form_url, file_path):
-                generate_consent_form(file_path, project_name)
-            else:
-                download_error = True
+            if obj_consent_form_url != None:
+                if download_file(obj_consent_form_url, file_path):
+                    generate_consent_form(file_path, project_name)
+                else:
+                    download_error = True
             
 
     if download_error:
