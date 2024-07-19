@@ -80,7 +80,30 @@ def convert_b64_to_png(signature_b64):
 
    return img
 
-def generate_consent_form(consent_form_json, project_name):
+def insert_signature(img, signature_b64, x_pos, y_pos):
+    font = cv2.FONT_HERSHEY_COMPLEX
+
+    #y_pos += y_off + 50
+    text = "Signature : " 
+    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
+
+    signature_png = convert_b64_to_png(signature_b64)
+
+    signature_png = cv2.resize(signature_png, (0, 0), fx = 0.2, fy = 0.2)
+
+    trans_mask = signature_png[:,:,3] == 0
+    signature_png[trans_mask] = [255, 255, 255, 255]
+    signature_png = cv2.cvtColor(signature_png, cv2.COLOR_BGRA2BGR)
+
+    x_pos = 350
+    y_pos -= 80
+    sign_height, sign_width, _ = signature_png.shape
+
+    img[y_pos:y_pos+sign_height, x_pos:x_pos+sign_width] = signature_png
+
+    return img
+
+def generate_consent_form(consent_form_data, project_name, task_name, output_path, cf_id):
     
     img = np.ones((1920, 1080, 3), dtype = np.uint8)
     img = 255*img
@@ -97,9 +120,6 @@ def generate_consent_form(consent_form_json, project_name):
 
     cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 2, cv2.LINE_AA)
 
-    with open(consent_form_json, 'r') as f:
-        consent_form_data = json.load(f)
-
     x_pos = 100
     y_pos += 100
     y_off = 80
@@ -108,74 +128,27 @@ def generate_consent_form(consent_form_json, project_name):
     cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
 
     y_pos += y_off
-    text = "First Name : " + consent_form_data['firstName']
+    text = "Task Name : " + task_name
     cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
 
-    y_pos += y_off
-    text = "Last Name : " + consent_form_data['lastName']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    y_pos += y_off
-    text = "Email : " + consent_form_data['email']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    y_pos += y_off
-    text = "Age : " + consent_form_data['age']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    y_pos += y_off
-    text = "Ethnicity : " + consent_form_data['ethnicity']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    y_pos += y_off
-    text = "Country of Origin : " + consent_form_data['selectedCountryOfOrigin']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    y_pos += y_off
-    text = "Country of Residence : " + consent_form_data['selectedResidingCountry']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    y_pos += y_off
-    text = "Gender : " + consent_form_data['gender']
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    if 'skinTone' in consent_form_data.keys():
+    for item in consent_form_data:
         y_pos += y_off
-        text = "Skin Tone : " + consent_form_data['skinTone']
-        cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
+        if 'signature' in item['name'].lower():
+            img = insert_signature(img, item['value'], x_pos, y_pos)
+        else:
+            text = item['name'] + ':     ' + item['value']
+            cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
 
-    y_pos += y_off + 50
-    text = "Signature : " 
-    cv2.putText(img, text, (x_pos, y_pos), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-    signature_b64 = consent_form_data['signature']
-    signature_png = convert_b64_to_png(signature_b64)
-
-    signature_png = cv2.resize(signature_png, (0, 0), fx = 0.2, fy = 0.2)
-
-    trans_mask = signature_png[:,:,3] == 0
-    signature_png[trans_mask] = [255, 255, 255, 255]
-    signature_png = cv2.cvtColor(signature_png, cv2.COLOR_BGRA2BGR)
-
-    x_pos = 350
-    y_pos -= 80
-    sign_height, sign_width, _ = signature_png.shape
-
-    img[y_pos:y_pos+sign_height, x_pos:x_pos+sign_width] = signature_png
-
-    file_name_base, _ = os.path.splitext(consent_form_json)
-
-    jpg_file_name = file_name_base + '.jpg'
+    jpg_file_name = output_path + '/consent_form.jpg'
 
     cv2.imwrite(jpg_file_name, img)
 
-    pdf_file_name = file_name_base + '.pdf'
+    pdf_file_name = output_path + '/consent_form_'+str(cf_id)+'.pdf'
 
     with open(pdf_file_name,"wb") as f:
         f.write(img2pdf.convert(jpg_file_name))
 
     os.remove(jpg_file_name)
-    os.remove(consent_form_json)
 
 
 def main():
@@ -206,7 +179,11 @@ def main():
     if 'consentFormStatus' in download_data.keys():
         consent_form_enabled = True if download_data['consentFormStatus'] else False
 
-    objects = download_data['objects']
+    save_individual_recordings = False 
+    if 'saveIndividualRecordings' in download_data.keys():
+        save_individual_recordings = download_data['saveIndividualRecordings']
+
+    tasks = download_data['objects']
 
     project_prefix = 'aidac/'+project_name+'/'
     approve_prefix = 'qc_approved/'
@@ -219,13 +196,12 @@ def main():
  
     download_error = False
 
-    for obj in objects:
-        obj_id = obj['id']
-        obj_name = obj['name']
-        obj_uploads = obj['uploads']
-        if consent_form_enabled:
-            obj_consent_form_url = obj['consentFormUrl']
+    for task in tasks:
+        task_id = task['id']
+        task_name = task['name']
+        obj_uploads = task['uploads']
 
+        consent_form_saved = False
         object_rejected = False        
         object_pending = False        
         if is_grouping:
@@ -235,7 +211,7 @@ def main():
         if ignore_rejected and object_rejected:
             continue
 
-        for upload in obj_uploads:
+        for idx, upload in enumerate(obj_uploads):
             upload_id = upload['id']
             upload_file_name = upload['fileName']
             upload_url = upload['s3Url']
@@ -249,7 +225,7 @@ def main():
             else:
                 folder_name = project_prefix + approve_prefix
 
-            folder_name += obj_name + '/'
+            folder_name += task_name + '/'
 
             create_folder(folder_name)
 
@@ -269,20 +245,21 @@ def main():
                     with open(script_file, 'w') as f:
                         f.write(script_data)
 
-        if consent_form_enabled:
-            if object_rejected:
-                folder_name = project_prefix + reject_prefix + obj_name + '/'
-            elif object_pending:
-                folder_name = project_prefix + pending_prefix + obj_name + '/'
-            else:
-                folder_name = project_prefix + approve_prefix + obj_name + '/'
-
-            file_path = folder_name + obj_name + '_consent_form.json'
-            if obj_consent_form_url != None:
-                if download_file(obj_consent_form_url, file_path):
-                    generate_consent_form(file_path, project_name)
+            if consent_form_enabled and not consent_form_saved:
+                if object_rejected:
+                    output_path = project_prefix + reject_prefix + task_name + '/'
+                elif object_pending:
+                    output_path = project_prefix + pending_prefix + task_name + '/'
                 else:
-                    download_error = True
+                    output_path = project_prefix + approve_prefix + task_name + '/'
+
+                consent_form_data = upload['consentFormData']
+
+                generate_consent_form(consent_form_data, project_name, task_name, output_path, idx)
+
+                if not save_individual_recordings:
+                    consent_form_saved = True
+
             
 
     if download_error:
