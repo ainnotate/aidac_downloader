@@ -1,7 +1,11 @@
 img2pdf==0.4.4
 numpy==1.24.1
+numpy==1.21.5
 opencv_contrib_python==4.6.0.66
-opencv_python==4.8.0.76
-opencv_python_headless==4.8.0.76
-Requests==2.31.0
+opencv_python==4.10.0.84
+opencv_python_headless==4.8.1.78
+playaudio==1.0.5
+pygame==2.5.2
+Requests==2.32.3
+soundfile==0.12.1
 tqdm==4.64.1
