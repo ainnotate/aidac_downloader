@@ -8,7 +8,9 @@ import numpy as np
 import cv2
 import base64
 import img2pdf
-
+import zipfile
+import soundfile as sf
+import shutil
 
 def is_object_rejected(uploads):
 
@@ -39,6 +41,11 @@ def file_already_present(file_path, upload_md5):
 
     isExist = os.path.exists(file_path)
     if not isExist:
+        return False
+
+    if os.path.getsize(file_path) > 0:
+        return True
+    else:
         return False
 
     with open(file_path, "rb") as f:
@@ -150,6 +157,64 @@ def generate_consent_form(consent_form_data, project_name, task_name, output_pat
 
     os.remove(jpg_file_name)
 
+def is_zip_file(filepath):
+    try:
+        with zipfile.ZipFile(filepath, 'r') as zip_file:
+            # If the file opens successfully, it is a zip file
+            return True
+    except (zipfile.BadZipFile, FileNotFoundError):
+        # If an exception occurs, it's not a zip file or the file doesn't exist
+        return False
+
+def is_flac_file(filepath):
+    try:
+        with open(filepath, 'rb') as file:
+            # Read the first 4 bytes of the file
+            header = file.read(4)
+            # Check if the bytes match the FLAC signature
+            return header == b'fLaC'
+    except FileNotFoundError:
+        # File does not exist
+        return False
+    except Exception as e:
+        # Handle other potential errors
+        print(f"An error occurred: {e}")
+        return False
+
+def unzip_file(zip_filepath):
+    try:
+
+        extract_to_folder = os.path.dirname(zip_filepath) + '/temp'
+
+        # Create the directory to extract to if it doesn't exist
+        os.makedirs(extract_to_folder, exist_ok=True)
+        
+        # Open the zip file
+        with zipfile.ZipFile(zip_filepath, 'r') as zip_ref:
+            # Extract all contents to the specified directory
+            zip_ref.extractall(extract_to_folder)
+
+        src_file = extract_to_folder + '/' + os.path.basename(zip_filepath)
+
+        shutil.copyfile(src_file, zip_filepath) #dst file name is same as the zip file
+
+        shutil.rmtree(extract_to_folder)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def convert_flac_to_wav(input_filepath):
+    try:
+
+        output_filepath = input_filepath
+        input_filepath = input_filepath+'.flac'
+        os.rename(output_filepath, input_filepath)
+        # Read the FLAC file
+        data, samplerate = sf.read(input_filepath)
+        # Write the data to a WAV file
+        sf.write(output_filepath, data, samplerate)
+        os.remove(input_filepath)
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="AIDAC Downloader - Download dataset directly from cloud storage.")
@@ -167,6 +232,7 @@ def main():
         print('Error: ', download_cfg_file, 'file not found')
         exit()
 
+    download_data = None
     # Load json data from file
     with open(download_cfg_file, 'r') as f:
         download_data = json.load(f)
@@ -236,6 +302,13 @@ def main():
             else:
                 if not download_file(upload_url, file_path):
                     download_error = True
+                else:
+                    if(is_zip_file(file_path)):
+                        unzip_file(file_path)
+
+                    if(is_flac_file(file_path)):
+                        convert_flac_to_wav(file_path)
+
 
             if 'scriptData' in upload:
                 if upload['scriptData'] != "":
