@@ -14,21 +14,93 @@ import shutil
 from datetime import datetime
 
 conversation_categories = {
-    "1": "Social Interaction and Communication",
-    "2": "Entertainment and Leisure",
-    "3": "Education and Learning",
-    "4": "Working Place Cooperation", 
-    "5": "Health and Wellness",
-    "6": "Travel and Navigation",
-    "7": "Finance and Budgeting",
-    "8": "Home Management",
-    "9": "Content Creation and Creative Arts",
-    "10": "Customer Support",
-    "11": "Customer Support",
-    "12": "Accessibility",
-    "13": "Legal and Ethical Guidance",
-    "14": "Miscellaneous",
-    "15": "Special Types of Conversations"
+    "1a": "Greetings and Small Talk",
+    "1b": "Conversation Practice",
+    "1c": "Virtual Companionship",
+    "1d": "Sharing Personal Experiences",
+    "1e": "Emotional Support",
+    "2a": "Jokes and Fun",
+    "2b": "Storytelling",
+    "2c": "Music and Songs",
+    "2d": "Games and Trivia",
+    "2e": "Entertainment and Movie Information",
+    "2f": "Sports",
+    "3a": "Knowledge and Information Retrieval",
+    "3b": "Educational Assistance",
+    "3c": "Language Learning and Translation",
+    "4a": "Work & Collaboration",
+    "4b": "Technical Support & Coding",
+    "5a": "Health and Fitness",
+    "5b": "Mental Health Support",
+    "5c": "Food and Recipe Assistance",
+    "5d": "Medical Advice and Health Guidance",
+    "5e": "Animals and Pets",
+    "6a": "Directions & Maps",
+    "6b": "Travel Recommendations",
+    "7a": "Financial Management",
+    "8a": "Shopping and Recommendations",
+    "8b": "Grocery Lists & Shopping",
+    "8c": "DIY Help",
+    "9a": "Content Creation",
+    "9b": "Creative Writing & Art",
+    "9c": "Music Composition",
+    "10a": "FAQ Handling",
+    "10b": "Product Assistance",
+
+    "11a": "Voice-to-Text Transcription",
+    "11b": "Simplifying Information",
+    "11c": "Assistance for Visually Impaired",
+    "12a": "Contract Explanations",
+    "12b": "Policy Summaries",
+    "12c": "Legal Research Assistance",
+    "13a": "Environmental Science and Ecology",
+    "14a": "Conversations that involve wired human sounds & direct audio playing from users"
+}
+
+conversation_categories_remapped = {
+    "1a": "Greetings and Small Talk",
+    "1b": "Conversation Practice",
+    "1c": "Virtual Companionship",
+    "1d": "Sharing Personal Experiences",
+    "1e": "Emotional Support",
+    "2a": "Jokes and Fun",
+    "2b": "Storytelling",
+    "2c": "Music and Songs",
+    "2d": "Games and Trivia",
+    "2e": "Entertainment and Movie Information",
+    "2f": "Sports",
+    "3a": "Knowledge and Information Retrieval",
+    "3b": "Educational Assistance",
+    "3c": "Language Learning and Translation",
+    "4a": "Work & Collaboration",
+    "4b": "Technical Support & Coding",
+    "5a": "Health and Fitness",
+    "5b": "Mental Health Support",
+    "5c": "Food and Recipe Assistance",
+    "5d": "Medical Advice and Health Guidance",
+    "5e": "Animals and Pets",
+    "6a": "Directions & Maps",
+    "6b": "Travel Recommendations",
+    "7a": "Financial Management",
+    "8a": "Shopping and Recommendations",
+    "8b": "Grocery Lists & Shopping",
+    "8c": "DIY Help",
+    "9a": "Content Creation",
+    "9b": "Creative Writing & Art",
+    "9c": "Music Composition",
+    "10a": "FAQ Handling",
+    "10b": "Product Assistance",
+
+    "11a": "FAQ Handling",  # Duplicate of 10a (document has Customer Support twice)
+    "11b": "Product Assistance",  # Duplicate of 10b (document has Customer Support twice)
+    "12a": "Voice-to-Text Transcription",
+    "12b": "Simplifying Information",
+    "12c": "Assistance for Visually Impaired",
+    "13a": "Contract Explanations",
+    "13b": "Policy Summaries",
+    "13c": "Legal Research Assistance",
+    "14a": "Environmental Science and Ecology",
+    "15a": "Conversations that involve wired human sounds & direct audio playing from users"
 }
 
 
@@ -321,6 +393,23 @@ def create_csv_from_nested_dict(nested_dict, headers, file_path):
     except Exception as e:
         print(f"Error creating CSV file: {e}")
 
+
+def get_value_by_name(json_data, name):
+    """
+    Get the value associated with a specific name from a JSON list of dictionaries.
+    
+    Args:
+        json_data: A list of dictionaries, each with 'id', 'name', and 'value' keys
+        name: The name to search for
+        
+    Returns:
+        The value associated with the name, or None if not found
+    """
+    for item in json_data:
+        if item.get('name') == name:
+            return item.get('value')
+    return None
+
 def main():
     parser = argparse.ArgumentParser(description="AIDAC Downloader - Download dataset directly from cloud storage.")
     
@@ -411,7 +500,7 @@ def main():
 
             if user_id != current_user_id:
                 if user_id not in user_id_map:
-                    formatted_speaker_id = f"{speaker_id:04d}"  
+                    formatted_speaker_id = f"{speaker_id:05d}"  
                     user_id_map[user_id] = [formatted_speaker_id, 0]
                     metadata_data[formatted_speaker_id] = {}
                     speaker_id += 1
@@ -439,10 +528,25 @@ def main():
 
             user_id_map[user_id][1] += 1
             file_cnt = user_id_map[user_id][1]
-            file_cnt_str = f"{file_cnt:04d}"
+            file_cnt_str = f"{file_cnt:03d}"
 
-            wav_file_path = folder_name + speaker_id_str + '-' + file_cnt_str + '.wav'
-            json_file_path = folder_name + speaker_id_str + '-' + file_cnt_str + '.json'
+            bg_only_wav = False
+
+            if 'scriptData' in upload:
+                if upload['scriptData'] != "":
+                    script_data = upload['scriptData'][1:-1].split('content:')[1]
+                    if script_data == 'DO NOT RECORD THIS TEXT. Record ONLY the background noise for 1min to 1.5min.':
+                        bg_only_wav = True
+
+            if bg_only_wav:
+                wav_file_path = folder_name + speaker_id_str + '-' + '000-1' + '.wav'
+                json_file_path = folder_name + speaker_id_str + '-' + '000-1' + '.json'
+                if os.path.isfile(wav_file_path):
+                    wav_file_path = folder_name + speaker_id_str + '-' + '000-2' + '.wav'
+                    json_file_path = folder_name + speaker_id_str + '-' + '000-2' + '.json'
+            else:
+                wav_file_path = folder_name + speaker_id_str + '-' + file_cnt_str + '.wav'
+                json_file_path = folder_name + speaker_id_str + '-' + file_cnt_str + '.json'
 
             if file_already_present(wav_file_path, upload_md5):
                 print('File already downloaded, avoiding re-download.')
@@ -469,8 +573,8 @@ def main():
 
                 consent_form_data = upload['consentFormData']
 
-                gender = consent_form_data[3]['value']
-                age = consent_form_data[2]['value']
+                gender = get_value_by_name(consent_form_data, 'CF_Gender') #consent_form_data[3]['value']
+                age = get_value_by_name(consent_form_data, 'CF_Age') #consent_form_data[2]['value']
 
                 #generate_consent_form(consent_form_data, project_name, task_name, output_path, idx)
 
@@ -481,36 +585,39 @@ def main():
                 print('Gender or Age is None.. ', gender, age)
                 exit()
 
-
             metadata_data[speaker_id_str]['Age'] = age
             metadata_data[speaker_id_str]['Gender'] = gender
             metadata_data[speaker_id_str]['Recording Device'] = 'Mobile'
 
             acoustic_environment = None
 
+            conversation_categories_map = conversation_categories_remapped
+            if language == 'Bengali':
+                conversation_categories_map = conversation_categories
+
             if 'scriptData' in upload:
                 if upload['scriptData'] != "":
                     script_file = wav_file_path.split('.')[0]+'_script.txt'
                     script_data = upload['scriptData'][1:-1].split('content:')[1]
                     script_topic_id = script_map[script_data]
-                    script_topic = conversation_categories[script_topic_id]
+                    if not bg_only_wav:
+                        script_topic = conversation_categories_map[script_topic_id]
                     metadata_json = {
-                            "text": script_data,
-                            "topic": script_topic,
+                            "text": '' if bg_only_wav else script_data,
+                            "topic": '' if bg_only_wav else script_topic,
                             "acoustic_environment": acoustic_environments_map[str(upload_id)],
                             "recording_device": "Mobile",
                             "speaker_name": speaker_id_str,
-                            "gender": gender,
-                            "language": language,
-                            "native_language": language,
-                            "accent": language
+                            "gender": '' if bg_only_wav else gender,
+                            "language": '' if bg_only_wav else language,
+                            "native_language": '' if bg_only_wav else language,
+                            "accent": '' if bg_only_wav else language
                         }
 
                     acoustic_environment = acoustic_environments_map[str(upload_id)]
 
                     with open(json_file_path, 'w') as file:
                         json.dump(metadata_json, file, indent=4, ensure_ascii=False)  # indent for pretty formatting
-            
 
             if 'Acoustic Environment 1' not in metadata_data[speaker_id_str]:
                 metadata_data[speaker_id_str]['Acoustic Environment 1'] = acoustic_environment
