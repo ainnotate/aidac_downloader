@@ -469,6 +469,31 @@ def create_empty_file(filename):
     with open(filename, 'w') as f:
         pass  # Do nothing, just create the file
 
+
+import json
+from collections import defaultdict
+
+def count_user_ids_from_uploads(json_data):
+    """
+    Counts how many times each userId appears inside uploads.
+
+    Parameters:
+    - json_data (dict): JSON with "objects" → "uploads" → each having a "userId".
+
+    Returns:
+    - dict: {userId: count}
+    """
+    user_id_counts = defaultdict(int)
+
+    for obj in json_data.get("objects", []):
+        for upload in obj.get("uploads", []):
+            user_id = upload.get("userId")
+            if user_id is not None:
+                user_id_counts[user_id] += 1
+
+    return dict(user_id_counts)
+
+
 def main():
     parser = argparse.ArgumentParser(description="AIDAC Downloader - Download dataset directly from cloud storage.")
     
@@ -497,6 +522,11 @@ def main():
     # Load json data from file
     with open(download_cfg_file, 'r') as f:
         download_data = json.load(f)
+
+
+    user_upload_count = count_user_ids_from_uploads(download_data)
+
+    print(user_upload_count)
 
     # Example usage:
     script_map = csv_to_dict(csv_filename)
@@ -570,10 +600,20 @@ def main():
             upload_md5 = upload['md5']
             upload_approval_status = upload['approvalStatus']
             user_id = upload['userId']
+            user_name = upload['userName']
 
             if acoustic_environments_map[str(upload_id)].strip() == '':
-                print('Skipping empty metadata upload... ')
+                print('Skipping empty metadata upload... UserId = ', user_id, 'Email = ', user_name)
                 continue
+
+            if user_upload_count[user_id] < 22:
+                print('User ', user_id, ' has only ', user_upload_count[user_id], ' uploads, Skipping')
+                continue
+
+            if user_id in speaker_map_csv:
+                if speaker_map_csv[user_id][2] == '2':
+                    print('Skipping already delivered upload..')
+                    continue
 
             if user_id != current_user_id:
                 if user_id not in user_id_map:
@@ -609,13 +649,7 @@ def main():
             file_cnt = user_id_map[user_id][1]
             file_cnt_str = f"{file_cnt:03d}"
 
-            total_sets = 0
-            if file_cnt == 11:
-                total_sets = 1
-            elif file_cnt == 22:
-                total_sets = 2
-
-            speaker_map_csv[user_id] = [upload['userName'], speaker_id_str, total_sets]
+            speaker_map_csv[user_id] = [upload['userName'], speaker_id_str, user_upload_count[user_id]]
 
             bg_only_wav = False
 
@@ -687,7 +721,7 @@ def main():
                     script_data = upload['scriptData'][1:-1].split('content:')[1]
                     script_topic_id = script_map[script_data]
                     if not bg_only_wav:
-                        script_topic = conversation_categories_remapped[script_topic_id]
+                        script_topic = conversation_categories[script_topic_id]
                     metadata_json = {
                             "text": '' if bg_only_wav else script_data,
                             "topic": '' if bg_only_wav else script_topic,
@@ -712,7 +746,7 @@ def main():
 
     if not dry_run:
         speaker_map_json_to_csv(speaker_map_csv, db_file_name)
-        
+
     # Get current date
     current_date = datetime.now()
 
