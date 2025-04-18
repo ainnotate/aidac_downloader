@@ -12,6 +12,7 @@ import zipfile
 import soundfile as sf
 import shutil
 from datetime import datetime
+from typing import Dict, List, Any
 
 conversation_categories = {
     "1a": "Greetings and Small Talk",
@@ -46,7 +47,6 @@ conversation_categories = {
     "9c": "Music Composition",
     "10a": "FAQ Handling",
     "10b": "Product Assistance",
-
     "11a": "Voice-to-Text Transcription",
     "11b": "Simplifying Information",
     "11c": "Assistance for Visually Impaired",
@@ -410,6 +410,65 @@ def get_value_by_name(json_data, name):
             return item.get('value')
     return None
 
+
+def speaker_map_csv_to_json(csv_file_path: str) -> Dict[str, List[Any]]:
+    """
+    Reads a CSV file and converts it to a JSON format where:
+    - The first column values are used as keys
+    - The rest of the columns for each row are converted to a list and stored as values
+    
+    Args:
+        csv_file_path (str): Path to the input CSV file
+        
+    Returns:
+        Dict[str, List[Any]]: Dictionary with the converted data or an empty dict if file not found
+    """
+    result = {}
+    
+    try:
+        with open(csv_file_path, 'r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                if not row:  # Skip empty rows
+                    continue
+                    
+                key = row[0]
+                values = row[1:] if len(row) > 1 else []
+                result[key] = values
+    except FileNotFoundError:
+        # Return empty dictionary if file doesn't exist
+        return {}
+    
+    return result
+
+def speaker_map_json_to_csv(json_data: Dict[str, List[Any]], csv_file_path: str) -> None:
+    """
+    Converts JSON data to CSV format where:
+    - Each key becomes the first column in a row
+    - The list of values becomes the rest of the columns in that row
+    
+    Args:
+        json_data (Dict[str, List[Any]]): Dictionary to convert
+        csv_file_path (str): Path to save the CSV output
+        
+    Returns:
+        None
+    """
+    with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        for key, values in json_data.items():
+            # Ensure values is a list
+            if not isinstance(values, list):
+                values = [values]
+            
+            # Write key and values to CSV
+            writer.writerow([key] + values)
+
+
+def create_empty_file(filename):
+    with open(filename, 'w') as f:
+        pass  # Do nothing, just create the file
+
 def main():
     parser = argparse.ArgumentParser(description="AIDAC Downloader - Download dataset directly from cloud storage.")
     
@@ -419,6 +478,7 @@ def main():
     parser.add_argument("-s", "--script-csv", type=str, help="Script CSV", required=True)
     parser.add_argument("-l", "--language", type=str, help="Language", required=True)
     parser.add_argument("-m", "--metadata-csv", type=str, help="Metaata CSV", required=True)
+    parser.add_argument("-d", "--dry-run", action='store_true', help="Dry run - do not download any files")
 
     args = vars(parser.parse_args())
 
@@ -427,6 +487,7 @@ def main():
     csv_filename =  args['script_csv']
     language =  args['language']
     metadata_csv = args['metadata_csv']
+    dry_run = args['dry_run']
 
     if not os.path.isfile(download_cfg_file):
         print('Error: ', download_cfg_file, 'file not found')
@@ -456,7 +517,7 @@ def main():
 
     tasks = download_data['objects']
 
-    project_prefix = 'aidac/'+project_name+'/'
+    project_prefix = 'aidac/dbrain/'+language+'/'
     approve_prefix = 'qc_approved/'
     reject_prefix = 'qc_rejected/'
     pending_prefix = 'qc_pending/'
@@ -467,13 +528,21 @@ def main():
  
     download_error = False
 
-    speaker_id = 1
-
     user_id_map = {}
     current_user_id = None
     metadata_header = ['ID', 'Mobile Number', 'Language', 'Native Language', 'Accent', 'Age', 'Gender', 'Recording Device', 'Acoustic Environment 1', 'Acoustic Environment 2']
     metadata_data = {}
     metadata_folder = None
+
+    #user_id, email, speaker_id, delivered
+
+    db_file_name = language+'_db.csv'
+    speaker_map_csv = speaker_map_csv_to_json(db_file_name)
+
+    speaker_id = 1
+    if len(speaker_map_csv):
+        last_key = list(speaker_map_csv.keys())[-1]
+        speaker_id = int(speaker_map_csv[last_key][1]) + 1
 
     for task in tasks:
         task_id = task['id']
@@ -490,6 +559,10 @@ def main():
         if ignore_rejected and object_rejected:
             continue
 
+        # if object_pending:
+        #     print('Object is pending - ')
+        #     continue
+
         for idx, upload in enumerate(obj_uploads):
             upload_id = upload['id']
             upload_file_name = upload['fileName']
@@ -497,6 +570,10 @@ def main():
             upload_md5 = upload['md5']
             upload_approval_status = upload['approvalStatus']
             user_id = upload['userId']
+
+            if acoustic_environments_map[str(upload_id)].strip() == '':
+                print('Skipping empty metadata upload... ')
+                continue
 
             if user_id != current_user_id:
                 if user_id not in user_id_map:
@@ -506,6 +583,8 @@ def main():
                     speaker_id += 1
 
             speaker_id_str = user_id_map[user_id][0]
+
+            speaker_map_csv[user_id] = [upload['userName'], speaker_id_str]
 
             metadata_data[speaker_id_str]['ID'] = str(speaker_id_str)
             metadata_data[speaker_id_str]['Mobile Number'] = '+91 1234567890'
@@ -530,6 +609,14 @@ def main():
             file_cnt = user_id_map[user_id][1]
             file_cnt_str = f"{file_cnt:03d}"
 
+            total_sets = 0
+            if file_cnt == 11:
+                total_sets = 1
+            elif file_cnt == 22:
+                total_sets = 2
+
+            speaker_map_csv[user_id] = [upload['userName'], speaker_id_str, total_sets]
+
             bg_only_wav = False
 
             if 'scriptData' in upload:
@@ -548,17 +635,20 @@ def main():
                 wav_file_path = folder_name + speaker_id_str + '-' + file_cnt_str + '.wav'
                 json_file_path = folder_name + speaker_id_str + '-' + file_cnt_str + '.json'
 
-            if file_already_present(wav_file_path, upload_md5):
-                print('File already downloaded, avoiding re-download.')
+            if dry_run:
+                create_empty_file(wav_file_path)
             else:
-                if not download_file(upload_url, wav_file_path):
-                    download_error = True
+                if file_already_present(wav_file_path, upload_md5):
+                    print('File already downloaded, avoiding re-download.')
                 else:
-                    if(is_zip_file(wav_file_path)):
-                        unzip_file(wav_file_path)
+                    if not download_file(upload_url, wav_file_path):
+                        download_error = True
+                    else:
+                        if(is_zip_file(wav_file_path)):
+                            unzip_file(wav_file_path)
 
-                    if(is_flac_file(wav_file_path)):
-                        convert_flac_to_wav(wav_file_path)
+                        if(is_flac_file(wav_file_path)):
+                            convert_flac_to_wav(wav_file_path)
 
             gender = None
             age = None
@@ -591,17 +681,13 @@ def main():
 
             acoustic_environment = None
 
-            conversation_categories_map = conversation_categories_remapped
-            if language == 'Bengali':
-                conversation_categories_map = conversation_categories
-
             if 'scriptData' in upload:
                 if upload['scriptData'] != "":
                     script_file = wav_file_path.split('.')[0]+'_script.txt'
                     script_data = upload['scriptData'][1:-1].split('content:')[1]
                     script_topic_id = script_map[script_data]
                     if not bg_only_wav:
-                        script_topic = conversation_categories_map[script_topic_id]
+                        script_topic = conversation_categories_remapped[script_topic_id]
                     metadata_json = {
                             "text": '' if bg_only_wav else script_data,
                             "topic": '' if bg_only_wav else script_topic,
@@ -624,18 +710,23 @@ def main():
             else:
                 metadata_data[speaker_id_str]['Acoustic Environment 2'] = acoustic_environment
 
-
+    if not dry_run:
+        speaker_map_json_to_csv(speaker_map_csv, db_file_name)
+        
     # Get current date
     current_date = datetime.now()
 
     # Format as day_MonthAbbr_Year
     formatted_date = current_date.strftime("%d_%b_%Y")
 
-    metadata_file = metadata_folder + '/Metadata_'+ formatted_date + '.csv'
+    if metadata_folder:
+        metadata_file = metadata_folder + '/Metadata_'+ formatted_date + '.csv'
 
-    create_csv_from_nested_dict(metadata_data, metadata_header, metadata_file)
+        create_csv_from_nested_dict(metadata_data, metadata_header, metadata_file)
 
-    print('Created Metadata file - ', metadata_file)
+        print('Created Metadata file - ', metadata_file)
+    else:
+        print('No metadata')
 
     if download_error:
         print('\nDownload Error - Probably the pre-signed urls expired. Please try downloading the Download Config File again or contact AIDAC support if issue persists.')
