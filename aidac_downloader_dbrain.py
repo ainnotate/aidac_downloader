@@ -13,6 +13,7 @@ import soundfile as sf
 import shutil
 from datetime import datetime
 from typing import Dict, List, Any
+import glob
 
 conversation_categories = {
     "1a": "Greetings and Small Talk",
@@ -142,11 +143,30 @@ def is_object_rejected(uploads):
 
     return True if len(rejected_list) else False
 
+def get_reject_count(uploads):
+
+    rejected_list = [
+        upload for upload in uploads
+        if upload['approvalStatus'] == 0
+    ]
+
+    return len(rejected_list)
+
+def get_approved_count(uploads):
+
+    approved_list = [
+        upload for upload in uploads
+        if upload['approvalStatus'] == 2
+    ]
+
+    return len(approved_list)
+
+
 def is_object_pending (uploads):
 
     pending_list = [
         upload for upload in uploads
-        if upload['approvalStatus'] == 2
+        if upload['approvalStatus'] == 1
     ]
 
     return True if len(pending_list) else False
@@ -488,48 +508,144 @@ def count_user_ids_from_uploads(json_data):
     for obj in json_data.get("objects", []):
         for upload in obj.get("uploads", []):
             user_id = upload.get("userId")
+            approval_status = upload.get("approvalStatus")
+
             if user_id is not None:
-                user_id_counts[user_id] += 1
+                if approval_status == 2:
+                    user_id_counts[user_id] += 1
 
     return dict(user_id_counts)
 
+
+def get_json_data(folder_path):
+    """
+    Finds and unzips a file with prefix 'aidas_json_project-1' in the specified folder,
+    then returns the content of the JSON file found within.
+    
+    Args:
+        folder_path (str): Path to the folder containing the zip file
+        
+    Returns:
+        dict: The parsed JSON data
+        
+    Raises:
+        FileNotFoundError: If no zip file with the required prefix is found
+        FileNotFoundError: If no JSON file is found in the extracted contents
+    """
+    # Find zip file with the specific prefix
+    zip_pattern = os.path.join(folder_path, "aidas_json_project-1*.zip")
+    zip_files = glob.glob(zip_pattern)
+    
+    if not zip_files:
+        raise FileNotFoundError(f"No zip file with prefix 'aidas_json_project-1' found in {folder_path}")
+    
+    # Use the first matching zip file
+    zip_file_path = zip_files[0]
+    
+    # Create extraction directory
+    extract_dir = os.path.join(folder_path, "extracted_content")
+    os.makedirs(extract_dir, exist_ok=True)
+    
+    # Unzip the file
+    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_dir)
+    
+    # Find JSON file
+    json_files = []
+    for root, dirs, files in os.walk(extract_dir):
+        for file in files:
+            if file.endswith('.json'):
+                json_files.append(os.path.join(root, file))
+    
+    if not json_files:
+        raise FileNotFoundError(f"No JSON file found in the extracted contents")
+    
+    # Read the JSON file (using the first one found)
+    with open(json_files[0], 'r') as f:
+        json_data = json.load(f)
+    
+    return json_data
+
+# Example usage:
+# data = process_aidas_project("/path/to/folder")
+
+def get_metadata_csv(folder_path):
+    """
+    Finds and unzips a file with prefix 'aidas_metadata-1' in the specified folder,
+    then returns the path to the CSV file found within.
+    
+    Args:
+        folder_path (str): Path to the folder containing the zip file
+        
+    Returns:
+        str: Path to the extracted CSV file
+        
+    Raises:
+        FileNotFoundError: If no zip file with the required prefix is found
+        FileNotFoundError: If no CSV file is found in the extracted contents
+    """
+    # Find zip file with the specific prefix
+    zip_pattern = os.path.join(folder_path, "aidas_metadata-1*.zip")
+    zip_files = glob.glob(zip_pattern)
+    
+    if not zip_files:
+        raise FileNotFoundError(f"No zip file with prefix 'aidas_metadata-1' found in {folder_path}")
+    
+    # Use the first matching zip file
+    zip_file_path = zip_files[0]
+    
+    # Create extraction directory
+    extract_dir = os.path.join(folder_path, "extracted_metadata")
+    os.makedirs(extract_dir, exist_ok=True)
+    
+    # Unzip the file
+    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_dir)
+    
+    # Find CSV file
+    csv_files = []
+    for root, dirs, files in os.walk(extract_dir):
+        for file in files:
+            if file.endswith('.csv'):
+                csv_files.append(os.path.join(root, file))
+    
+    if not csv_files:
+        raise FileNotFoundError(f"No CSV file found in the extracted contents")
+    
+    # Return the path to the first CSV file found
+    return csv_files[0]
+
+# Example usage:
+# csv_path = extract_aidas_metadata_csv("/path/to/folder")
+# df = pd.read_csv(csv_path)  # You can then use pandas to read the CSV
 
 def main():
     parser = argparse.ArgumentParser(description="AIDAC Downloader - Download dataset directly from cloud storage.")
     
     # Add command line arguments
-    parser.add_argument("-c", "--download-cfg", type=str, help="Download Config File (JSON)", required=True)
+    parser.add_argument("-r", "--release-folder-path", type=str, help="Release folder path", required=True)
     parser.add_argument("-i", "--ignore-rejected", action='store_true', help="Ignore and do not download rejected datasets")
-    parser.add_argument("-s", "--script-csv", type=str, help="Script CSV", required=True)
     parser.add_argument("-l", "--language", type=str, help="Language", required=True)
-    parser.add_argument("-m", "--metadata-csv", type=str, help="Metaata CSV", required=True)
     parser.add_argument("-d", "--dry-run", action='store_true', help="Dry run - do not download any files")
 
     args = vars(parser.parse_args())
 
-    download_cfg_file = args['download_cfg']
+    release_folder_path = args['release_folder_path']
     ignore_rejected = args['ignore_rejected']
-    csv_filename =  args['script_csv']
     language =  args['language']
-    metadata_csv = args['metadata_csv']
     dry_run = args['dry_run']
 
-    if not os.path.isfile(download_cfg_file):
-        print('Error: ', download_cfg_file, 'file not found')
-        exit()
-
     download_data = None
-    # Load json data from file
-    with open(download_cfg_file, 'r') as f:
-        download_data = json.load(f)
 
+    download_data = get_json_data(release_folder_path)
+    metadata_csv = get_metadata_csv(release_folder_path)
+    script_csv_filename = release_folder_path + '/' + language + '_Scripts.csv'
+    user_upload_approval_count = count_user_ids_from_uploads(download_data)
 
-    user_upload_count = count_user_ids_from_uploads(download_data)
-
-    print(user_upload_count)
+    print(user_upload_approval_count)
 
     # Example usage:
-    script_map = csv_to_dict(csv_filename)
+    script_map = csv_to_dict(script_csv_filename)
 
     acoustic_environments_map = get_acoustic_environments(metadata_csv)
 
@@ -547,7 +663,7 @@ def main():
 
     tasks = download_data['objects']
 
-    project_prefix = 'aidac/dbrain/'+language+'/'
+    project_prefix = 'aidac/'+language+'/'
     approve_prefix = 'qc_approved/'
     reject_prefix = 'qc_rejected/'
     pending_prefix = 'qc_pending/'
@@ -568,6 +684,7 @@ def main():
 
     db_file_name = language+'_db.csv'
     speaker_map_csv = speaker_map_csv_to_json(db_file_name)
+    new_users_from_this_release = {}
 
     speaker_id = 1
     if len(speaker_map_csv):
@@ -585,13 +702,19 @@ def main():
         if is_grouping:
             object_rejected = is_object_rejected(obj_uploads)
             object_pending = is_object_pending(obj_uploads)
+            total_rejected = get_reject_count(obj_uploads)
+            approved_count = get_approved_count(obj_uploads)
 
         if ignore_rejected and object_rejected:
-            continue
+            if total_rejected > 2: #Dbran specific, only 15 is required
+                print('Ignoring rejected set')
+                continue
 
-        # if object_pending:
-        #     print('Object is pending - ')
-        #     continue
+        user_name = None 
+        speaker_id_str = None
+        user_id = None
+        task_skipped = False
+
 
         for idx, upload in enumerate(obj_uploads):
             upload_id = upload['id']
@@ -604,15 +727,18 @@ def main():
 
             if acoustic_environments_map[str(upload_id)].strip() == '':
                 print('Skipping empty metadata upload... UserId = ', user_id, 'Email = ', user_name)
+                task_skipped = True
                 continue
 
-            if user_upload_count[user_id] < 22:
-                print('User ', user_id, ' has only ', user_upload_count[user_id], ' uploads, Skipping')
+            if user_upload_approval_count[user_id] < 15:
+                print('User ', user_id, ' has only ', approved_count, ' approved uploads, Skipping.')
+                task_skipped = True
                 continue
 
             if user_id in speaker_map_csv:
-                if speaker_map_csv[user_id][2] == '2':
+                if int(speaker_map_csv[user_id][2]) >= 16:
                     print('Skipping already delivered upload..')
+                    task_skipped = True
                     continue
 
             if user_id != current_user_id:
@@ -623,8 +749,6 @@ def main():
                     speaker_id += 1
 
             speaker_id_str = user_id_map[user_id][0]
-
-            speaker_map_csv[user_id] = [upload['userName'], speaker_id_str]
 
             metadata_data[speaker_id_str]['ID'] = str(speaker_id_str)
             metadata_data[speaker_id_str]['Mobile Number'] = '+91 1234567890'
@@ -648,8 +772,6 @@ def main():
             user_id_map[user_id][1] += 1
             file_cnt = user_id_map[user_id][1]
             file_cnt_str = f"{file_cnt:03d}"
-
-            speaker_map_csv[user_id] = [upload['userName'], speaker_id_str, user_upload_count[user_id]]
 
             bg_only_wav = False
 
@@ -721,7 +843,7 @@ def main():
                     script_data = upload['scriptData'][1:-1].split('content:')[1]
                     script_topic_id = script_map[script_data]
                     if not bg_only_wav:
-                        script_topic = conversation_categories[script_topic_id]
+                        script_topic = conversation_categories[script_topic_id] if script_topic_id in conversation_categories else conversation_categories_remapped[script_topic_id] 
                     metadata_json = {
                             "text": '' if bg_only_wav else script_data,
                             "topic": '' if bg_only_wav else script_topic,
@@ -743,6 +865,11 @@ def main():
                 metadata_data[speaker_id_str]['Acoustic Environment 1'] = acoustic_environment
             else:
                 metadata_data[speaker_id_str]['Acoustic Environment 2'] = acoustic_environment
+
+        if not task_skipped:
+            new_users_from_this_release[user_id] = [upload['userName'], speaker_id_str, user_upload_approval_count[user_id]]
+
+    speaker_map_csv = speaker_map_csv | new_users_from_this_release
 
     if not dry_run:
         speaker_map_json_to_csv(speaker_map_csv, db_file_name)
